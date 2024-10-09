@@ -5,7 +5,7 @@
 #include <algorithm>
 
 #define LINE_END "\r\n"
-
+#define SEP ": "
 #define OK 200
 #define BAD_REQUEST 400
 #define NOT_FOUND 404
@@ -132,8 +132,8 @@ private:
         return stop;                                      //---------------
     }
 
-    // 请求行 = 方法 + uri + HTTP/版本（采取空格分割）
-    void ParseHttpRequestLine() 
+    // 解析请求行 = 方法 + uri + HTTP/版本（采取空格分割）
+    void ParseHttpRequestLine()
     {
         // line引用字符串http_request.request_line
         auto &line = http_request.request_line;
@@ -145,6 +145,68 @@ private:
 
         auto &method = http_request.method; /// 对请求方法全部转换成大写（⭐⭐⭐⭐⭐transform函数）
         std::transform(method.begin(), method.end(), method.begin(), ::toupper);
+    }
+
+    // 解析请求报头，数据存入 unordered_map
+    void ParseHttpRequestHeader()
+    {
+        std::string key;
+        std::string value;
+        // 由于请求报头是 key: value 格式，将其存入 unordered_map 里面
+        for (auto &iter : http_request.request_header)
+        {
+            if (Utill::CutString(iter, key, value, SEP)) // 分隔符是 “: ”
+            {
+                http_request.header_kv.insert({key, value});
+            }
+        }
+    }
+
+    // 判断HTTP请求是否含有请求正文，为解析请求正文作准备
+    bool IsNeedRecvHttpRequestBody()
+    {
+        auto &method = http_request.method;
+        if (method == "POST") // GET 和 POST 两种方法，只有 POST 方法含有请求正文
+        {
+            auto &header_kv = http_request.header_kv;
+            auto iter = header_kv.find("Content-Length"); // 有请求正文则在请求报头中会提示Content-Length的大小
+            if (iter != header_kv.end())
+            {
+                INFO("%s", "Post Method, Content-Length: " + iter->second);
+                http_request.content_length = atoi(iter->second.c_str());
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // 接收请求正文，将正文存入 http_request.request_body
+    bool RecvHttpRequestBody()
+    {
+        // 只有 POST 方法才需要进行接收
+        if (IsNeedRecvHttpRequestBody())
+        {
+            int content_length = http_request.content_length;
+            auto &body = http_request.request_body;
+
+            char ch = 0;
+            while (content_length)
+            {
+                ssize_t s = recv(sock, &ch, 1, 0);
+                if (s > 0)
+                {
+                    body.push_back(ch);
+                    content_length--;
+                }
+                else
+                {
+                    stop = true;
+                    break;
+                }
+            }
+            INFO("%s", body);
+        }
+        return stop;
     }
 
 public:
