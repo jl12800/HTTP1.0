@@ -16,8 +16,10 @@ int main(int argc, char *argv[])
     }
     int port = atoi(argv[1]);
 
+    // 创建 httpserver 对象
     std::shared_ptr<HttpServer> http_server(new HttpServer(port));
 
+    // 初始化
     http_server->InitServer();
     http_server->Loop();
 

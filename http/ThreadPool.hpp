@@ -80,7 +80,7 @@ public:
     }
 
     // 线程要执行的方法必须是静态的，因为它默认的参数只有一个
-    static void *ThreadRoutine(void *args) /// 1.线程处理
+    static void *ThreadRoutine(void *args) /// 线程处理
     {
         ThreadPool *tp = (ThreadPool *)args; // 要读取的线程池的指针
 
