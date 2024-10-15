@@ -20,7 +20,7 @@
 #define NOT_FOUND 404
 #define SERVER_ERROR 500
 
-// 状态码描述
+// 状态码描述：传入状态码，获得状态码描述结果
 static std::string Code2Desc(int code)
 {
     std::string desc;
@@ -41,7 +41,7 @@ static std::string Code2Desc(int code)
 // 依照请求资源的后缀，构建HTTP响应的报头中Content-Type的类型（Content-Type: text/html）
 static std::string Suffix2Desc(const std::string &suffix)
 {
-    // static 只会初始化一次
+    // static 只会初始化一次，可以进一步优化！完善资源类型
     static std::unordered_map<std::string, std::string> suffix2desc = {
         {".html", "text/html"},
         {".css", "text/css"},
@@ -78,7 +78,7 @@ public:
     int content_length;                                     // 记录请求正文的大小
     std::string path;                                       // 记录请求资源的路径
     std::string suffix;                                     // 记录请求资源的后缀
-    std::string query_string;                               // 记录请求
+    std::string query_string;                               // 记录解析URI中 ? 后的内容
 
     bool cgi; // 是否是CGI机制（是否需要http或相关程序作数据处理）
     int size; // 正文的大小
@@ -126,13 +126,14 @@ private:
         if (Utill::ReadLine(sock, line) > 0)
         {
             line.resize(line.size() - 1);
+            // 打印请求行的信息
             INFO("%s", http_request.request_line);
         }
         else
         {
             stop = true; // 读取失败，标记位退出
         }
-        std::cout << "RecvHttpRequestLine: " << stop << std::endl; // 查看标记位的状态
+        // std::cout << "RecvHttpRequestLine: " << stop << std::endl; // 查看标记位的状态
         return stop;
     }
 
@@ -148,18 +149,24 @@ private:
                 stop = true; // 读取信息出错
                 break;
             }
+
+            // 读到空行，代表请求报头读完了
             if (line == "\n")
             {
                 http_request.blank = line;
                 break;
             }
+
+            // 否则，读取的结果是请求报头
             line.resize(line.size() - 1);
 
-            // 读取的结果输入到请求报头中
+            // 将读取的结果存入到请求报头中
             http_request.request_header.push_back(line);
+
+            // 打印请求报头的信息
             INFO("%s", line);
         }
-        std::cout << "stop debug: " << stop << std::endl; // 查看标记位状态
+        // std::cout << "RecvHttpRequestHeader: " << stop << std::endl; // 查看标记位状态
         return stop;
     }
 
@@ -171,6 +178,7 @@ private:
 
         // 使用请求行字符串构造stringstream对象ss
         std::stringstream ss(line);
+
         // 将其输出到 method uri version
         ss >> http_request.method >> http_request.uri >> http_request.version;
 
@@ -203,6 +211,7 @@ private:
             auto iter = header_kv.find("Content-Length"); // 若有请求正文，则在请求报头中会提示Content-Length的大小
             if (iter != header_kv.end())
             {
+                // 找到了
                 INFO("%s", "Post Method, Content-Length: " + iter->second); // 显示post方法对应的正文长度
                 http_request.content_length = atoi(iter->second.c_str());
                 return true;
@@ -235,6 +244,7 @@ private:
                     break;
                 }
             }
+
             INFO("%s", body); // 提示接收到的正文内容
         }
         return stop;
@@ -248,16 +258,17 @@ private:
         int code = OK;
         // 父进程数据
         auto &method = http_request.method;
-        auto &query_string = http_request.query_string; // GET
-        auto &body_text = http_request.request_body;    // POST
-        auto &bin = http_request.path;                  // 保持子进程执行的目标程序，一定存在
-        int content_length = http_request.content_length;
-        auto &response_body = http_response.response_body;
+        auto &query_string = http_request.query_string;   // GET方法请求资源的内容
+        auto &body_text = http_request.request_body;      // POST方法请求资源的内容
+        auto &bin = http_request.path;                    // 保持子进程执行的目标程序，一定存在
+        int content_length = http_request.content_length; // 请求正文长度post
+
+        auto &response_body = http_response.response_body; // 响应正文
 
         // 设置环境变量，用来传递给子进程
-        std::string query_string_env;
-        std::string method_env;
-        std::string content_length_env;
+        std::string query_string_env;   // GET方法请求资源的内容
+        std::string method_env;         // 请求方法
+        std::string content_length_env; // post请求正文长度
 
         // 站在父进程角度，创建输入输出管道
         int input[2];  // 0代表读，1代表写；父进程向input读取内容，接收子进程的输入
@@ -329,23 +340,23 @@ private:
             if (method == "POST")
             {
                 const char *start = body_text.c_str();
-                int total = 0;
-                int size = 0;
+                int total = 0; // 记录写入的数据字节数。
+                int size = 0;  // 记录每次 write() 操作写入的字节数
                 while (total < content_length && (size = write(output[1], start + total, body_text.size() - total)) > 0)
                 {
                     total += size;
                 }
             }
             char ch = 0;
-            while (read(input[0], &ch, 1) > 0)
+            while (read(input[0], &ch, 1) > 0) // 读取子进程的输入，放入响应正文中
             {
                 response_body.push_back(ch);
             }
-            int status = 0;
-            pid_t ret = waitpid(pid, &status, 0);
+            int status = 0;                       // 保存子进程的退出状态
+            pid_t ret = waitpid(pid, &status, 0); // 父进程调用 waitpid() 等待子进程 pid 结束，并获取其退出状态
             if (ret == pid)
             {
-                if (WIFEXITED(status))
+                if (WIFEXITED(status)) // 检查子进程是否正常退出
                 {
                     if (WEXITSTATUS(status) == 0)
                         code = OK;
@@ -358,13 +369,11 @@ private:
                 }
             }
 
-            close(input[0]);
-            close(output[1]);
+            close(input[0]);  // 父进程完成数据读取后，关闭 input[0] 读端
+            close(output[1]); // 父进程完成数据写入后，关闭 output[1] 写端，表示数据传输完成
         }
         return code;
     }
-
-    
 
     // 非CGI机制返回信息
     int ProcessNonCgi()
@@ -412,7 +421,7 @@ private:
         {
             struct stat st;
             stat(page.c_str(), &st);
-            http_request.size = st.st_size;
+            http_request.size = st.st_size; // 将文件大小（st.st_size）存储到 http_request.size 中，表示这个文件的大小。
 
             std::string line = "Content-Type: text/html";
             line += LINE_END;
@@ -485,14 +494,13 @@ public:
         }
     }
 
-    // 依旧接收到的HTTP请求信息构建HTTP响应
+    // 依据接收到的HTTP请求信息构建HTTP响应
     void BuildHttpResponse()
     {
         auto &code = http_response.status_code;
         std::string _path;
         struct stat st;
         std::size_t found = 0;
-        
 
         // 强制要求接收到的请求的方法必须是GET和POST
         if (http_request.method != "GET" && http_request.method != "POST")
@@ -602,28 +610,32 @@ public:
     // 发送
     void SendHttpResponse()
     {
+        // 发送响应行
         send(sock, http_response.status_line.c_str(), http_response.status_line.size(), 0);
         for (auto iter : http_response.response_header)
         {
             send(sock, iter.c_str(), iter.size(), 0);
         }
+
+        // 发送空行
         send(sock, http_response.blank.c_str(), http_response.blank.size(), 0);
-        // fd, response_body
-        if (http_request.cgi)
+
+        if (http_request.cgi) // 为 CGI 响应，响应体已经通过 CGI 程序生成，保存在 http_response.response_body 中
         {
             auto &response_body = http_response.response_body;
-            size_t size = 0;
-            size_t total = 0;
+            size_t size = 0;  // 每次 send() 调用实际发送的字节数
+            size_t total = 0; // 已发送的字节数
             const char *start = response_body.c_str();
             while (total < response_body.size() && (size = send(sock, start + total, response_body.size() - total, 0)) > 0)
             {
                 total += size;
             }
         }
-        else
+        else // 将文件的内容发送给客户端
         {
-            std::cout << ".............." << http_response.fd << std::endl;
-            std::cout << ".............." << http_request.size << std::endl;
+            // std::cout << ".............." << http_response.fd << std::endl;
+            // std::cout << ".............." << http_request.size << std::endl;
+            // 直接将文件从磁盘发送到客户端，而无需将文件内容读取到内存中。这可以减少 CPU 负担和内存拷贝的开销。
             sendfile(sock, http_response.fd, nullptr, http_request.size);
             close(http_response.fd);
         }
@@ -635,41 +647,55 @@ public:
     }
 };
 
-class CallBack{
-    public:
-        CallBack()
-        {}
-        void operator()(int sock)
+class CallBack
+{
+public:
+    CallBack()
+    {
+    }
+
+    // 仿函数，以便于：object(sock);
+    void operator()(int sock)
+    {
+        HandlerRequest(sock);
+    }
+
+    // 处理HTTP请求
+    void HandlerRequest(int sock)
+    {
+        INFO("%s", "Hander Request Begin...");
+
+#ifdef DEBUG_CODE // 获取浏览器的原生请求For Test
+        char buffer[4096];
+        recv(sock, buffer, sizeof(buffer), 0);
+        std::cout << "-------------begin----------------" << std::endl;
+        std::cout << buffer << std::endl;
+        std::cout << "-------------end----------------" << std::endl;
+#else
+        // 创建EndPoint对象，为了：读取请求，分析请求，构建响应
+        EndPoint *ep = new EndPoint(sock);
+
+        // 读取请求信息，若标志位为false，读取没有出错，开始构建和发送http响应
+        ep->RecvHttpRequest();
+        if (!ep->IsStop())
         {
-            HandlerRequest(sock);
+            INFO("%s", "Recv No Error, Begin Build And Send");
+            ep->BuildHttpResponse();
+            ep->SendHttpResponse();
         }
-        void HandlerRequest(int sock)
+        else
         {
-            INFO("%s", "Hander Request Begin");
-			
-#ifdef DEBUG_CODE///////////获取浏览器的原生请求
-            //For Test
-            char buffer[4096];
-            recv(sock, buffer, sizeof(buffer), 0);
-            std::cout << "-------------begin----------------" << std::endl;
-            std::cout << buffer << std::endl;
-            std::cout << "-------------end----------------" << std::endl;
-#else 
-            EndPoint *ep = new EndPoint(sock);
-            ep->RecvHttpRequest();
-            if(!ep->IsStop()){ //一定要注意逻辑关系
-                INFO("%s", "Recv No Error, Begin Build And Send");
-                ep->BuildHttpResponse();
-                ep->SendHttpResponse();
-            }
-            else{
-                WARN("%s", "Recv Error, Stop Build And Send");
-            }
-            delete ep;
+            WARN("%s", "Recv Error, Stop Build And Send");
+        }
+
+        // 释放对象
+        delete ep;
 #endif
-            INFO("%s", "Hander Request End");
-        }
-        
-        ~CallBack()
-        {}
+        // 处理完毕
+        INFO("%s", "Hander Request Done...");
+    }
+
+    ~CallBack()
+    {
+    }
 };

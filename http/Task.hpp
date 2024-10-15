@@ -17,9 +17,9 @@ class Task{
         //处理任务
         void ProcessOn()
         {
-            handler(sock);
+            handler(sock);// 在回调函数内部重载()，构成仿函数
         }
-        
+
         ~Task()
         {}
 };

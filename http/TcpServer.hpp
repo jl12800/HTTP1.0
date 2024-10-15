@@ -1,5 +1,6 @@
 #pragma once
 
+#include "logs/mylog.h"
 #include <iostream>
 #include <cstdlib>
 #include <cstring>
@@ -59,6 +60,7 @@ public:
         listen_sock = socket(AF_INET, SOCK_STREAM, 0); // 使用 IPv4, TCP 协议
         if (listen_sock < 0)                           // 判断套接字是否创建成功
         {
+            FATAL("%s", "创建套接字失败...");
             exit(1); // 创建失败，退出程序
         }
         int opt = 1;
@@ -78,6 +80,7 @@ public:
         // 绑定套接字到本地地址和端口
         if (bind(listen_sock, (struct sockaddr *)&local, sizeof(local)) < 0)
         {
+            FATAL("%s", "绑定套接字失败...");
             exit(2); // 绑定失败，退出程序
         }
     }
@@ -87,6 +90,7 @@ public:
     {
         if (listen(listen_sock, BACKLOG) < 0) // 开始监听，最大连接队列长度为 BACKLOG
         {
+            FATAL("%s", "监听套接字失败...");
             exit(3); // 监听失败，退出程序
         }
     }
