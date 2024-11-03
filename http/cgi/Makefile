@@ -1,6 +1,6 @@
 # 定义伪目标 all
 .PHONY: all
-all: test_cgi #mysql_cgi  # 默认目标，构建 test_cgi 和 mysql_cgi
+all: test_cgi mysql_cgi  # 默认目标，构建 test_cgi 和 mysql_cgi
 
 # 规则: 构建 test_cgi
 test_cgi: test_cgi.cc  # test_cgi 依赖于 test_cgi.cc
@@ -14,4 +14,4 @@ mysql_cgi: mysql_cgi.cc  # mysql_cgi 依赖于 mysql_cgi.cc
 # 定义伪目标 clean
 .PHONY: clean
 clean:  # 清理目标
-	rm -f mysql_cgi test_cgi  # 删除生成的可执行文件
+	rm -f test_cgi mysql_cgi # 删除生成的可执行文件
